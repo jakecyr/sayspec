@@ -3,13 +3,15 @@ import "dotenv/config";
 import { Command } from "commander";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
+import { JevClient } from "./jev.js";
+import { LlmClient, type LlmProvider } from "./llm.js";
 import { Runner } from "./runner.js";
 import { findSpec, loadSpec } from "./spec.js";
 import type { ArtifactMode, BrowserName } from "./types.js";
 
 const program = new Command()
   .name("sayspec")
-  .description("Run natural-language browser tests with Jev and Playwright")
+  .description("Run natural-language browser tests with a Jev or LLM classifier and Playwright")
   .version("0.1.0")
   .argument("[spec]", "YAML/JSON suite file or directory; otherwise searches parent directories")
   .option("--init", "write a starter sayspec.yaml in the current directory")
@@ -21,7 +23,13 @@ const program = new Command()
   .option("--artifacts <mode>", "always, failure, or off")
   .option("--artifact-root <path>", "artifact output directory", "artifacts")
   .option("--json <path>", "write the suite result as JSON")
-  .action(async (specFile: string | undefined, options: { init?: boolean; headed?: boolean; browser?: string; cdp?: string; executablePath?: string; userDataDir?: string; artifacts?: string; artifactRoot: string; json?: string }) => {
+  .option("--jev", "use the Jev decision classifier (default)")
+  .option("--llm", "use an LLM classifier; provider and credentials are auto-detected from the environment")
+  .option("--llm-provider <provider>", "openai, anthropic, or ollama")
+  .option("--llm-base-url <url>", "override the LLM API base URL or local host")
+  .option("--llm-model <model>", "override the LLM model")
+  .option("--llm-reasoning <level>", "override the LLM reasoning effort")
+  .action(async (specFile: string | undefined, options: { init?: boolean; headed?: boolean; browser?: string; cdp?: string; executablePath?: string; userDataDir?: string; artifacts?: string; artifactRoot: string; json?: string; jev?: boolean; llm?: boolean; llmProvider?: string; llmBaseUrl?: string; llmModel?: string; llmReasoning?: string }) => {
     if (options.init) {
       const output = path.resolve(specFile ?? "sayspec.yaml");
       await writeFile(output, `name: My browser tests\nbaseUrl: https://example.com\nartifacts: failure\ngif: true\n\ntests:\n  - id: smoke\n    steps:\n      - do: Verify the site is available\n        expect: The Example Domain page is visible\n`);
@@ -42,8 +50,18 @@ const program = new Command()
       if (!["always", "failure", "off"].includes(options.artifacts)) throw new Error(`Unknown artifact mode: ${options.artifacts}`);
       spec.artifacts = options.artifacts as ArtifactMode;
     }
-    console.log(`Running ${spec.name} (${spec.browser}, ${spec.headless ? "headless" : "headed"})`);
-    const result = await new Runner(spec, { artifactRoot: options.artifactRoot, onEvent: console.log }).run();
+    if (options.jev && options.llm) throw new Error("Choose either --jev or --llm, not both");
+    if (options.llmProvider && !["openai", "anthropic", "ollama"].includes(options.llmProvider)) throw new Error(`Unknown LLM provider: ${options.llmProvider}`);
+    const classifier = options.llm
+      ? new LlmClient({
+        ...(options.llmProvider ? { provider: options.llmProvider as LlmProvider } : {}),
+        ...(options.llmBaseUrl ? { baseUrl: options.llmBaseUrl } : {}),
+        ...(options.llmModel ? { model: options.llmModel } : {}),
+        ...(options.llmReasoning ? { reasoning: options.llmReasoning } : {}),
+      })
+      : new JevClient();
+    console.log(`Running ${spec.name} (${spec.browser}, ${spec.headless ? "headless" : "headed"}, ${options.llm ? "LLM" : "Jev"} classifier)`);
+    const result = await new Runner(spec, { artifactRoot: options.artifactRoot, onEvent: console.log }, { classifier }).run();
     console.log(`\n${result.passed} passed, ${result.failed} failed, ${result.skipped} skipped in ${result.durationMs}ms`);
     if (options.json) await writeFile(path.resolve(options.json), JSON.stringify(result, null, 2));
     if (result.failed > 0) process.exitCode = 1;

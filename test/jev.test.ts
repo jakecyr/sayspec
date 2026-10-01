@@ -103,9 +103,9 @@ describe("JevClient", () => {
       };
       if (target !== undefined) {
         const head = `${operation.toLowerCase()}_target`;
-        answers[head] = answer(target, Object.keys(body.questions[head]!.criteria));
+        if (body.questions[head]) answers[head] = answer(target, Object.keys(body.questions[head].criteria));
       }
-      if (dropTarget !== undefined) answers.drop_target = answer(dropTarget, Object.keys(body.questions.drop_target!.criteria));
+      if (dropTarget !== undefined && body.questions.drop_target) answers.drop_target = answer(dropTarget, Object.keys(body.questions.drop_target.criteria));
       return new Response(JSON.stringify({ answers }), { status: 200, headers: { "content-type": "application/json" } });
     }) as typeof fetch;
     const client = new JevClient({ apiKey: "test", fetch: fetcher, minimumConfidence: 0 });

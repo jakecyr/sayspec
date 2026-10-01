@@ -14,9 +14,12 @@ export class TextModel {
   private readonly fetcher: typeof globalThis.fetch;
 
   constructor(options: TextModelOptions = {}) {
-    this.apiKey = options.apiKey ?? process.env.TEXT_MODEL_API_KEY ?? "";
-    this.endpoint = `${(options.baseUrl ?? process.env.TEXT_MODEL_BASE_URL ?? "https://api.deepseek.com/v1").replace(/\/+$/u, "")}/chat/completions`;
-    this.model = options.model ?? process.env.TEXT_MODEL ?? "deepseek-chat";
+    const dedicatedApiKey = options.apiKey || process.env.TEXT_MODEL_API_KEY;
+    const useDedicatedConfig = Boolean(dedicatedApiKey);
+    this.apiKey = dedicatedApiKey || process.env.OPENAI_API_KEY || "";
+    const baseUrl = options.baseUrl || (useDedicatedConfig ? process.env.TEXT_MODEL_BASE_URL : process.env.OPENAI_BASE_URL) || (useDedicatedConfig ? "https://api.deepseek.com/v1" : "https://api.openai.com/v1");
+    this.endpoint = `${baseUrl.replace(/\/+$/u, "")}/chat/completions`;
+    this.model = options.model || (useDedicatedConfig ? process.env.TEXT_MODEL : process.env.OPENAI_MODEL) || (useDedicatedConfig ? "deepseek-chat" : "gpt-5-mini");
     this.fetcher = options.fetch ?? globalThis.fetch;
   }
 

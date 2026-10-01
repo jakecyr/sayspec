@@ -1,5 +1,7 @@
 import "dotenv/config";
 import { JevClient } from "../src/jev.js";
+import { LlmClient } from "../src/llm.js";
+import type { Classifier } from "../src/runner.js";
 import type { Observation, ObservedElement, Operation } from "../src/types.js";
 
 type Case = { name: string; step: { do: string; input?: string }; expected: Operation; observation: Observation };
@@ -76,13 +78,14 @@ const cases: Case[] = [
   },
 ];
 
-const client = new JevClient();
+const classifierName = process.env.CLASSIFIER === "llm" ? "LLM" : "Jev";
+const client: Classifier = process.env.CLASSIFIER === "llm" ? new LlmClient() : new JevClient();
 let failures = 0;
 for (const testCase of cases) {
   try {
     const decision = await client.decide(testCase.step, testCase.observation, []);
     const passed = decision.status === "ACTION" && decision.operation === testCase.expected;
-    console.log(`${passed ? "PASS" : "FAIL"} ${testCase.name}: ${decision.status}${decision.operation ? `/${decision.operation}` : ""} (${decision.confidence.toFixed(3)})`);
+    console.log(`${passed ? "PASS" : "FAIL"} ${testCase.name} [${classifierName}]: ${decision.status}${decision.operation ? `/${decision.operation}` : ""} (${decision.confidence.toFixed(3)})`);
     if (!passed) failures += 1;
   } catch (error) {
     failures += 1;

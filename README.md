@@ -1,6 +1,6 @@
 # SaySpec
 
-A fast natural-language browser testing CLI. Playwright observes the current page as a compact table of visible, actionable elements. Jev chooses a typed status, operation, and element from that table. The executor accepts only those observed choices—never model-generated selectors, coordinates, JavaScript, or shell commands.
+A fast natural-language browser testing CLI. Playwright observes the current page as a compact table of visible, actionable elements. A Jev decision model or a general-purpose LLM chooses a typed status, operation, and element from that table. The executor accepts only those observed choices—never model-generated selectors, coordinates, JavaScript, or shell commands.
 
 This is an early working foundation, not yet a production test framework. It follows the architecture described by [Jev Ultrafast](https://github.com/browser-use/jev-ultrafast): one Jev request can speculatively answer the step-status, operation, and compatible target questions; only the target belonging to the selected operation is allowed to execute.
 
@@ -16,7 +16,27 @@ npx playwright install chromium
 cp .env.example .env
 ```
 
-Set `TYPESAFE_API_KEY`. Jev makes decisions but does not generate text, so any test that fills a field also needs `TEXT_MODEL_API_KEY` for an OpenAI-compatible small text model.
+Jev is the default classifier; set `TYPESAFE_API_KEY` to use it. To classify with a general-purpose model instead, configure one of the providers below and pass `--llm`. When no dedicated `TEXT_MODEL_*` configuration is present, the OpenAI configuration is also used to generate field values.
+
+```sh
+# OpenAI (auto-detected first when multiple providers have keys)
+OPENAI_API_KEY=...
+OPENAI_MODEL=gpt-5-mini
+OPENAI_REASONING=low
+sayspec suite.yaml --llm
+
+# Anthropic (fast default: claude-haiku-4-5)
+ANTHROPIC_API_KEY=...
+sayspec suite.yaml --llm --llm-provider anthropic
+
+# Ollama through its OpenAI-compatible chat endpoint
+OLLAMA_MODEL=<your-local-chat-model>
+sayspec suite.yaml --llm --llm-provider ollama
+```
+
+Use `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`, and `LLM_REASONING` for provider-neutral configuration. `LLM_BASE_URL` takes precedence over provider-specific URLs, so an OpenAI-compatible deployment can be selected with, for example, `LLM_PROVIDER=openai` and `LLM_BASE_URL=http://localhost:8000/v1`. The equivalent CLI overrides are `--llm-provider`, `--llm-base-url`, `--llm-model`, and `--llm-reasoning`.
+
+OpenAI and Anthropic requests use strict JSON Schema output with one enum per decision. Ollama uses the same OpenAI-compatible request shape. Returned keys are still checked against the currently offered operations and observed elements before any browser action executes.
 
 Install the CLI from this checkout and use it from any directory:
 
@@ -41,6 +61,12 @@ Useful options:
 --artifacts always|failure|off
 --artifact-root <directory>
 --json <result-file>
+--jev                       Use Jev (default)
+--llm                       Use an auto-detected LLM provider
+--llm-provider <provider>   openai, anthropic, or ollama
+--llm-base-url <url>        Override the API base URL/local host
+--llm-model <model>         Override the classifier model
+--llm-reasoning <level>     Override reasoning effort
 ```
 
 ## Spec format
@@ -145,7 +171,7 @@ npm run dev -- examples/conformance.yaml
 sayspec examples/conformance.yaml
 ```
 
-`npm run test:live-jev` makes a small set of real Jev API calls against synthetic browser states and verifies that Jev chooses the expected operation for click, type, select, nested scroll, keyboard, back, and tab-switch scenarios.
+`npm run test:live-jev` makes a small set of real Jev API calls against synthetic browser states. `npm run test:live-llm` runs the same classifier checks with the auto-detected LLM provider. Both verify click, type, select, nested scroll, keyboard, back, and tab-switch decisions.
 
 Best-effort public-site journeys live under `examples/live/`:
 

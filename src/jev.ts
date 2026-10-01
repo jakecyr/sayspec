@@ -7,10 +7,16 @@ type ChoiceAnswer = {
   probabilities: Record<string, number>;
 };
 
-type JevResponse = {
+export type SystemOneResponse = {
   answers: Record<string, unknown>;
   model?: string;
   usage?: Record<string, number>;
+};
+
+export type SystemOneRequest = {
+  model: string;
+  state: unknown;
+  questions: Record<string, { type: "choice"; instructions: unknown; criteria: Record<string, unknown> }>;
 };
 
 const retryStatuses = new Set([429, 500, 502, 503, 504, 520, 521, 522, 523, 524, 529]);
@@ -78,26 +84,27 @@ function operationChoices(elements: ObservedElement[], step: StepSpec): Record<s
 
 type ElementOperation = "CLICK" | "DOUBLE_CLICK" | "RIGHT_CLICK" | "HOVER" | "TYPE_TEXT" | "SELECT" | "CHECK" | "UNCHECK" | "UPLOAD_FILE" | "DRAG_DROP" | "SCROLL_UP" | "SCROLL_DOWN";
 
-function targetChoices(elements: ObservedElement[], operation: ElementOperation): Record<string, unknown> {
-  const choices: Record<string, unknown> = {};
+function targetChoices(elements: ObservedElement[], operation: ElementOperation): Record<string, string> {
+  const choices: Record<string, string> = {};
   for (const element of elements.filter((candidate) => candidate.operations.includes(operation) && !candidate.disabled)) {
     if (operation === "SELECT") {
       for (const option of element.options ?? []) {
-        choices[`${element.id}::${option.index}`] = {
-          element: `[${element.id}] ${element.role} ${element.label}`,
-          option: option.label,
-          selected: option.selected,
-        };
+        choices[`${element.id}::${option.index}`] = `[${element.id}] ${element.role} "${element.label}"; option "${option.label}"; selected=${option.selected}`;
       }
     } else {
-      choices[element.id] = {
-        element: `[${element.id}] ${element.role} ${element.label}`,
-        current_value: element.value ?? "",
-        checked: element.checked,
-      };
+      const details = [`[${element.id}] ${element.role} "${element.label}"`];
+      if (element.value !== undefined) details.push(`current value="${element.value}"`);
+      if (element.checked !== undefined) details.push(`checked=${element.checked}`);
+      choices[element.id] = details.join("; ");
     }
   }
   return choices;
+}
+
+function deterministicOrValidatedChoice(answer: unknown, choices: Record<string, unknown>, name: string): string {
+  const keys = Object.keys(choices);
+  if (keys.length === 1) return keys[0]!;
+  return validateChoice(answer, choices, name).choice;
 }
 
 const allowedKeys: AllowedKey[] = ["Enter", "Escape", "Tab", "Shift+Tab", "Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End", "ControlOrMeta+A"];
@@ -129,7 +136,7 @@ export class JevClient {
     this.fetcher = options.fetch ?? globalThis.fetch;
   }
 
-  private async request(body: unknown): Promise<JevResponse> {
+  protected async request(body: unknown): Promise<SystemOneResponse> {
     if (!this.apiKey) throw new Error("TYPESAFE_API_KEY is not set");
     for (let attempt = 0; attempt < 3; attempt++) {
       const response = await this.fetcher(this.endpoint, {
@@ -138,7 +145,7 @@ export class JevClient {
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(this.timeoutMs),
       });
-      if (response.ok) return response.json() as Promise<JevResponse>;
+      if (response.ok) return response.json() as Promise<SystemOneResponse>;
       if (retryStatuses.has(response.status) && attempt < 2) {
         await new Promise((resolve) => setTimeout(resolve, 300 * 2 ** attempt));
         continue;
@@ -187,7 +194,7 @@ export class JevClient {
     };
     for (const operation of ["CLICK", "DOUBLE_CLICK", "RIGHT_CLICK", "HOVER", "TYPE_TEXT", "SELECT", "CHECK", "UNCHECK", "UPLOAD_FILE", "DRAG_DROP", "SCROLL_UP", "SCROLL_DOWN"] as const) {
       const targets = targetChoices(observation.elements, operation);
-      if (Object.keys(targets).length > 0) {
+      if (Object.keys(targets).length > 1) {
         questions[`${operation.toLowerCase()}_target`] = {
           type: "choice",
           criteria: targets,
@@ -201,9 +208,10 @@ export class JevClient {
       }
     }
     if (operations.DRAG_DROP) {
-      questions.drop_target = {
+      const dropTargets = Object.fromEntries(observation.elements.filter((element) => !element.disabled && !element.operations.includes("DRAG_DROP")).map((element) => [element.id, `[${element.id}] ${element.role} "${element.label}"`]));
+      if (Object.keys(dropTargets).length > 1) questions.drop_target = {
         type: "choice",
-        criteria: Object.fromEntries(observation.elements.filter((element) => !element.disabled && !element.operations.includes("DRAG_DROP")).map((element) => [element.id, { role: element.role, label: element.label }])),
+        criteria: dropTargets,
         instructions: { step: step.do, rules: "Choose the observed destination for the drag. Another question chooses the draggable source." },
       };
     }
@@ -215,7 +223,7 @@ export class JevClient {
     if (observation.tabs.length > 1) {
       questions.switch_tab_target = {
         type: "choice",
-        criteria: Object.fromEntries(observation.tabs.map((tab) => [String(tab.index), { title: tab.title, url: tab.url, active: tab.active }])),
+        criteria: Object.fromEntries(observation.tabs.map((tab) => [String(tab.index), `title="${tab.title}"; url=${tab.url}; active=${tab.active}`])),
         instructions: { step: step.do, rules: "Choose the observed tab that advances the step; avoid the already active tab unless no alternative applies." },
       };
     }
@@ -245,15 +253,15 @@ export class JevClient {
     decision.operation = operation.choice as Operation;
     if (["CLICK", "DOUBLE_CLICK", "RIGHT_CLICK", "HOVER", "TYPE_TEXT", "SELECT", "CHECK", "UNCHECK", "UPLOAD_FILE", "DRAG_DROP", "SCROLL_UP", "SCROLL_DOWN"].includes(decision.operation)) {
       const targets = targetChoices(observation.elements, decision.operation as ElementOperation);
-      const target = validateChoice(response.answers[`${decision.operation.toLowerCase()}_target`], targets, `${decision.operation} target`);
-      const [elementId, option] = target.choice.split("::");
+      const target = deterministicOrValidatedChoice(response.answers[`${decision.operation.toLowerCase()}_target`], targets, `${decision.operation} target`);
+      const [elementId, option] = target.split("::");
       if (!elementId) throw new Error("Jev returned an empty target id");
       decision.elementId = elementId;
       if (option !== undefined) decision.optionIndex = Number(option);
     }
     if (decision.operation === "DRAG_DROP") {
       const choices = Object.fromEntries(observation.elements.filter((element) => !element.disabled && element.id !== decision.elementId && !element.operations.includes("DRAG_DROP")).map((element) => [element.id, element.label]));
-      decision.dropElementId = validateChoice(response.answers.drop_target, choices, "drop target").choice;
+      decision.dropElementId = deterministicOrValidatedChoice(response.answers.drop_target, choices, "drop target");
     }
     if (decision.operation === "PRESS_KEY") {
       const choices = Object.fromEntries(allowedKeys.map((key) => [key, key]));

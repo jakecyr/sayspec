@@ -22,6 +22,7 @@
     "fixture": "node --import tsx scripts/fixture-server.ts",
     "test": "vitest run",
     "test:live-jev": "node --import tsx scripts/live-jev-conformance.ts",
+    "test:live-llm": "CLASSIFIER=llm node --import tsx scripts/live-jev-conformance.ts",
     "typecheck": "tsc --noEmit"
   },
   "engines": {

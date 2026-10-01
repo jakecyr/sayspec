@@ -6,19 +6,24 @@ import { orderedTests } from "./spec.js";
 import { TextModel } from "./text-model.js";
 import type { AssertionSpec, HistoryEntry, SuiteResult, SuiteSpec, TestResult, TestSpec } from "./types.js";
 
+export interface Classifier {
+  decide(step: TestSpec["steps"][number], observation: Awaited<ReturnType<BrowserSession["observe"]>>, history: HistoryEntry[]): ReturnType<JevClient["decide"]>;
+  assert(expectation: string, observation: Awaited<ReturnType<BrowserSession["observe"]>>, context: string): ReturnType<JevClient["assert"]>;
+}
+
 export interface RunnerOptions {
   artifactRoot?: string;
   onEvent?: (message: string) => void;
 }
 
 export class Runner {
-  private readonly jev: JevClient;
+  private readonly classifier: Classifier;
   private readonly textModel: TextModel;
   private readonly artifactRoot: string;
   private readonly log: (message: string) => void;
 
-  constructor(private readonly spec: SuiteSpec, options: RunnerOptions = {}, clients?: { jev?: JevClient; textModel?: TextModel }) {
-    this.jev = clients?.jev ?? new JevClient();
+  constructor(private readonly spec: SuiteSpec, options: RunnerOptions = {}, clients?: { classifier?: Classifier; jev?: JevClient; textModel?: TextModel }) {
+    this.classifier = clients?.classifier ?? clients?.jev ?? new JevClient();
     this.textModel = clients?.textModel ?? new TextModel();
     this.artifactRoot = options.artifactRoot ?? path.resolve("artifacts");
     this.log = options.onEvent ?? (() => undefined);
@@ -27,7 +32,7 @@ export class Runner {
   private async checkAssertions(assertions: AssertionSpec[], browser: BrowserSession, test: TestSpec, timing: "end" | "throughout"): Promise<void> {
     for (const assertion of assertions.filter((candidate) => candidate.timing === timing)) {
       const observation = await browser.observe();
-      const result = await this.jev.assert(assertion.expect, observation, `Test ${test.id}: ${test.goal ?? test.name ?? test.id}`);
+      const result = await this.classifier.assert(assertion.expect, observation, `Test ${test.id}: ${test.goal ?? test.name ?? test.id}`);
       if (!result.passed) throw new Error(`${timing} assertion failed (${result.confidence.toFixed(3)}): ${assertion.expect}`);
     }
   }
@@ -46,7 +51,7 @@ export class Runner {
     for (let attempt = 0; attempt < limit; attempt++) {
       const observation = await browser.observe();
       await recorder?.capture(browser);
-      const decision = await this.jev.decide(step, observation, history);
+      const decision = await this.classifier.decide(step, observation, history);
       const entry: HistoryEntry = {
         at: new Date().toISOString(),
         step: step.do,
