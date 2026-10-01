@@ -2,12 +2,21 @@ import { existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import { chromium, firefox, webkit, type Browser, type BrowserContext, type Frame, type Page } from "playwright";
+import { chromium, firefox, webkit, type Browser, type BrowserContext, type BrowserContextOptions, type Frame, type Page } from "playwright";
 import type { AllowedKey, BrowserName, Observation, ObservedElement, Operation } from "./types.js";
 
 type SnapshotElement = Omit<ObservedElement, "id" | "frameId">;
 
 export class StaleObservationError extends Error {}
+
+export type BrowserStorageState = Awaited<ReturnType<BrowserContext["storageState"]>>;
+
+export interface BrowserSessionOptions {
+  cdpUrl?: string;
+  executablePath?: string;
+  userDataDir?: string;
+  storageState?: BrowserStorageState;
+}
 
 export class BrowserSession {
   private browser?: Browser;
@@ -21,7 +30,7 @@ export class BrowserSession {
     private readonly browserName: BrowserName,
     private readonly headless: boolean,
     private readonly timeoutMs: number,
-    private readonly options: { cdpUrl?: string; executablePath?: string; userDataDir?: string } = {},
+    private readonly options: BrowserSessionOptions = {},
   ) {}
 
   private braveExecutable(): string {
@@ -50,10 +59,11 @@ export class BrowserSession {
     const executablePath = this.browserName === "brave" ? this.braveExecutable() : this.options.executablePath;
     const launchOptions: { headless: boolean; executablePath?: string } = { headless: this.headless };
     if (executablePath !== undefined) launchOptions.executablePath = executablePath;
-    const contextOptions = {
+    const contextOptions: BrowserContextOptions = {
       viewport: { width: 1280, height: 720 },
       reducedMotion: "reduce",
-    } as const;
+    };
+    if (this.options.storageState !== undefined) contextOptions.storageState = this.options.storageState;
     if (this.options.userDataDir) {
       this.context = await browserType.launchPersistentContext(path.resolve(this.options.userDataDir), { ...launchOptions, ...contextOptions });
     } else {
@@ -334,6 +344,11 @@ export class BrowserSession {
 
   async screenshot(file: string): Promise<void> {
     await this.currentPage().screenshot({ path: file, fullPage: false });
+  }
+
+  async storageState(): Promise<BrowserStorageState> {
+    if (!this.context) throw new Error("Browser session has not started");
+    return this.context.storageState({ indexedDB: true });
   }
 
   async resetTabs(): Promise<void> {

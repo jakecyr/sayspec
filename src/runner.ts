@@ -1,6 +1,6 @@
 import path from "node:path";
 import { ArtifactRecorder } from "./artifacts.js";
-import { BrowserSession, StaleObservationError } from "./browser.js";
+import { BrowserSession, StaleObservationError, type BrowserSessionOptions, type BrowserStorageState } from "./browser.js";
 import { JevClient } from "./jev.js";
 import { orderedTests } from "./spec.js";
 import { TextModel } from "./text-model.js";
@@ -14,6 +14,14 @@ export interface Classifier {
 export interface RunnerOptions {
   artifactRoot?: string;
   onEvent?: (message: string) => void;
+  /** Test hook for supplying a BrowserSession-compatible instance. */
+  browserFactory?: (storageState?: BrowserStorageState) => BrowserSession;
+}
+
+interface TestExecution {
+  result: TestResult;
+  storageState?: BrowserStorageState;
+  url?: string;
 }
 
 export class Runner {
@@ -21,12 +29,24 @@ export class Runner {
   private readonly textModel: TextModel;
   private readonly artifactRoot: string;
   private readonly log: (message: string) => void;
+  private readonly browserFactory: ((storageState?: BrowserStorageState) => BrowserSession) | undefined;
 
   constructor(private readonly spec: SuiteSpec, options: RunnerOptions = {}, clients?: { classifier?: Classifier; jev?: JevClient; textModel?: TextModel }) {
     this.classifier = clients?.classifier ?? clients?.jev ?? new JevClient();
     this.textModel = clients?.textModel ?? new TextModel();
     this.artifactRoot = options.artifactRoot ?? path.resolve("artifacts");
     this.log = options.onEvent ?? (() => undefined);
+    this.browserFactory = options.browserFactory;
+  }
+
+  private createBrowser(storageState?: BrowserStorageState): BrowserSession {
+    if (this.browserFactory) return this.browserFactory(storageState);
+    const browserOptions: BrowserSessionOptions = {};
+    if (this.spec.cdpUrl !== undefined) browserOptions.cdpUrl = this.spec.cdpUrl;
+    if (this.spec.executablePath !== undefined) browserOptions.executablePath = this.spec.executablePath;
+    if (this.spec.userDataDir !== undefined) browserOptions.userDataDir = this.spec.userDataDir;
+    if (storageState !== undefined) browserOptions.storageState = storageState;
+    return new BrowserSession(this.spec.browser, this.spec.headless, this.spec.timeoutMs, browserOptions);
   }
 
   private async checkAssertions(assertions: AssertionSpec[], browser: BrowserSession, test: TestSpec, timing: "end" | "throughout"): Promise<void> {
@@ -102,16 +122,16 @@ export class Runner {
     throw new Error(`Step exceeded ${limit} browser actions: ${step.do}`);
   }
 
-  private async runTest(test: TestSpec, browser: BrowserSession, runId: string): Promise<TestResult> {
+  private async runTest(test: TestSpec, browser: BrowserSession, runId: string, inheritedUrl?: string): Promise<TestResult> {
     const started = performance.now();
     const history: HistoryEntry[] = [];
     const recorder = this.spec.artifacts === "off" ? undefined : new ArtifactRecorder(this.artifactRoot, runId, test.id);
     await recorder?.start();
     let error: Error | undefined;
     try {
-      const url = test.url ?? this.spec.baseUrl;
+      const url = test.url ?? this.spec.baseUrl ?? inheritedUrl;
       await browser.resetTabs();
-      if (url) await browser.goto(new URL(url, this.spec.baseUrl).toString());
+      if (url) await browser.goto(new URL(url, this.spec.baseUrl ?? inheritedUrl).toString());
       await this.checkAssertions(test.assertions, browser, test, "throughout");
       for (const step of test.steps) await this.runStep(step, test, browser, history, recorder, false);
       await this.checkAssertions(test.assertions, browser, test, "end");
@@ -146,17 +166,47 @@ export class Runner {
     return result;
   }
 
-  async run(): Promise<SuiteResult> {
-    const startedAt = new Date().toISOString();
-    const started = performance.now();
-    const runId = `${startedAt.replace(/[:.]/g, "-")}-${this.spec.name}`;
+  private async runIsolatedTest(test: TestSpec, runId: string, inherited?: Omit<TestExecution, "result">): Promise<TestExecution> {
+    const browser = this.createBrowser(inherited?.storageState);
+    try {
+      await browser.start();
+      const result = await this.runTest(test, browser, runId, inherited?.url);
+      if (result.status !== "passed") return { result };
+      return {
+        result,
+        storageState: await browser.storageState(),
+        url: browser.currentPage().url(),
+      };
+    } catch (caught) {
+      return {
+        result: {
+          id: test.id,
+          status: "failed",
+          durationMs: 0,
+          error: caught instanceof Error ? caught.message : String(caught),
+        },
+      };
+    } finally {
+      await browser.close();
+    }
+  }
+
+  private inheritedExecution(test: TestSpec, executions: Map<string, TestExecution>): Omit<TestExecution, "result"> | undefined {
+    if (test.dependsOn.length === 0) return undefined;
+    const stateSource = test.stateFrom ?? test.dependsOn[0]!;
+    const execution = executions.get(stateSource);
+    if (!execution) throw new Error(`Browser state dependency ${stateSource} has not completed for ${test.id}`);
+    const inherited: Omit<TestExecution, "result"> = {};
+    if (execution.storageState !== undefined) inherited.storageState = execution.storageState;
+    if (execution.url !== undefined) inherited.url = execution.url;
+    return inherited;
+  }
+
+  private async runShared(runId: string): Promise<TestResult[]> {
+    if (this.spec.workers !== 1) throw new Error("CDP and userDataDir suites require workers: 1 because a persistent browser context cannot be safely shared by parallel tests");
     const results: TestResult[] = [];
     const byId = new Map<string, TestResult>();
-    const browserOptions: { cdpUrl?: string; executablePath?: string; userDataDir?: string } = {};
-    if (this.spec.cdpUrl !== undefined) browserOptions.cdpUrl = this.spec.cdpUrl;
-    if (this.spec.executablePath !== undefined) browserOptions.executablePath = this.spec.executablePath;
-    if (this.spec.userDataDir !== undefined) browserOptions.userDataDir = this.spec.userDataDir;
-    const browser = new BrowserSession(this.spec.browser, this.spec.headless, this.spec.timeoutMs, browserOptions);
+    const browser = this.createBrowser();
     await browser.start();
     try {
       for (const test of orderedTests(this.spec)) {
@@ -177,6 +227,60 @@ export class Runner {
     } finally {
       await browser.close();
     }
+    return results;
+  }
+
+  private async runIsolated(runId: string): Promise<TestResult[]> {
+    const ordered = orderedTests(this.spec);
+    const ambiguous = ordered.find((test) => test.dependsOn.length > 1 && test.stateFrom === undefined);
+    if (ambiguous) throw new Error(`Test ${ambiguous.id} has multiple dependencies; set stateFrom to choose which dependency supplies browser state`);
+
+    const pending = new Map(ordered.map((test) => [test.id, test]));
+    const executions = new Map<string, TestExecution>();
+    const running = new Map<string, Promise<{ id: string; execution: TestExecution }>>();
+
+    while (pending.size > 0 || running.size > 0) {
+      let madeProgress = false;
+      for (const [id, test] of pending) {
+        if (running.size >= this.spec.workers) break;
+        if (!test.dependsOn.every((dependency) => executions.has(dependency))) continue;
+        pending.delete(id);
+        madeProgress = true;
+        const failedDependency = test.dependsOn.find((dependency) => executions.get(dependency)?.result.status !== "passed");
+        if (failedDependency) {
+          const result: TestResult = { id, status: "skipped", durationMs: 0, error: `Dependency ${failedDependency} did not pass` };
+          executions.set(id, { result });
+          this.log(`  - ${id}: skipped (${result.error})`);
+          continue;
+        }
+
+        this.log(`  - ${id}`);
+        const inherited = this.inheritedExecution(test, executions);
+        const promise = this.runIsolatedTest(test, runId, inherited).then((execution) => ({ id, execution }));
+        running.set(id, promise);
+      }
+
+      if (running.size > 0) {
+        const completed = await Promise.race(running.values());
+        running.delete(completed.id);
+        executions.set(completed.id, completed.execution);
+        const result = completed.execution.result;
+        this.log(`    ${result.id}: ${result.status} in ${result.durationMs}ms${result.error ? `: ${result.error}` : ""}`);
+        continue;
+      }
+      if (pending.size > 0 && !madeProgress) throw new Error("Dependency scheduler could not make progress");
+    }
+
+    return ordered.map((test) => executions.get(test.id)!.result);
+  }
+
+  async run(): Promise<SuiteResult> {
+    const startedAt = new Date().toISOString();
+    const started = performance.now();
+    const runId = `${startedAt.replace(/[:.]/g, "-")}-${this.spec.name}`;
+    const results = this.spec.cdpUrl || this.spec.userDataDir
+      ? await this.runShared(runId)
+      : await this.runIsolated(runId);
     return {
       name: this.spec.name,
       startedAt,

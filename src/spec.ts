@@ -38,12 +38,14 @@ const suiteInput = z.object({
   maxActionsPerStep: z.number().int().positive().max(200).default(20),
   artifacts: z.enum(["always", "failure", "off"]).default("failure"),
   gif: z.boolean().default(true),
+  workers: z.number().int().positive().max(64).default(1),
   tests: z.array(z.object({
     id: z.string().regex(/^[a-zA-Z0-9_-]+$/),
     name: z.string().min(1).optional(),
     goal: z.string().min(1).optional(),
     url: z.string().min(1).optional(),
     dependsOn: z.array(z.string()).default([]),
+    stateFrom: z.string().optional(),
     steps: z.array(stepInput).min(1),
     cleanup: z.array(stepInput).default([]),
     assertions: z.array(assertionInput).default([]),
@@ -79,6 +81,9 @@ function validateGraph(tests: TestSpec[]): void {
       if (!ids.has(dep)) throw new Error(`Test ${test.id} depends on unknown test ${dep}`);
       if (dep === test.id) throw new Error(`Test ${test.id} cannot depend on itself`);
     }
+    if (test.stateFrom !== undefined && !test.dependsOn.includes(test.stateFrom)) {
+      throw new Error(`Test ${test.id} stateFrom must name one of its direct dependencies`);
+    }
   }
 
   const visiting = new Set<string>();
@@ -108,6 +113,7 @@ export function parseSpec(value: unknown): SuiteSpec {
     if (test.name !== undefined) normalized.name = test.name;
     if (test.goal !== undefined) normalized.goal = test.goal;
     if (test.url !== undefined) normalized.url = test.url;
+    if (test.stateFrom !== undefined) normalized.stateFrom = test.stateFrom;
     return normalized;
   });
   validateGraph(tests);
@@ -119,6 +125,7 @@ export function parseSpec(value: unknown): SuiteSpec {
     maxActionsPerStep: input.maxActionsPerStep,
     artifacts: input.artifacts,
     gif: input.gif,
+    workers: input.workers,
     tests,
   };
   if (input.baseUrl !== undefined) suite.baseUrl = input.baseUrl;

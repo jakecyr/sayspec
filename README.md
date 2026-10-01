@@ -60,6 +60,7 @@ Useful options:
 --user-data-dir <path>      Use a persistent automation profile
 --artifacts always|failure|off
 --artifact-root <directory>
+--workers <count>           Run dependency-ready tests concurrently (1-64)
 --json <result-file>
 --jev                       Use Jev (default)
 --llm                       Use an auto-detected LLM provider
@@ -76,11 +77,18 @@ name: Store smoke tests
 baseUrl: https://shop.example.com
 artifacts: failure
 gif: true
+workers: 4
 
 tests:
   - id: login
     steps:
-      - Sign in with the test account
+      - do: Enter the test account email
+        inputEnv: TEST_EMAIL
+        sensitive: true
+      - do: Enter the test account password
+        inputEnv: TEST_PASSWORD
+        sensitive: true
+      - Click Sign in
     assertions:
       - expect: The account menu shows the test account is signed in
         timing: end
@@ -102,9 +110,31 @@ tests:
     cleanup:
       - do: Remove the blue travel mug from the cart
         when: The cart contains the blue travel mug
+
+  - id: order-history
+    dependsOn: [login]
+    url: /orders
+    steps:
+      - Verify the latest order is visible
 ```
 
 Steps may be strings or objects with `do`, `when`, `expect`, and `maxActions`. Dependencies are topologically ordered; a test is skipped when a dependency fails or is skipped. Cleanup runs in `finally`, including after step or assertion failures.
+
+Ordinary suites run each test in a fresh browser context. After a test passes, its cookies, local storage, and IndexedDB state are captured in memory. A test with one dependency starts with that dependency's state, so `login` runs once while `checkout` and `order-history` receive separate authenticated contexts and can run in parallel. The state is not written to the artifact directory or another file.
+
+`workers` defaults to `1` and can be overridden with `--workers`. Tests run as soon as all their dependencies have completed successfully, up to the worker limit. Each parallel test gets its own browser context, so changes made by one sibling do not leak into another.
+
+When a test has multiple dependencies, use `stateFrom` to select the direct dependency whose browser state it should inherit; status still depends on every listed test:
+
+```yaml
+- id: combined-check
+  dependsOn: [login, seeded-data]
+  stateFrom: login
+  steps:
+    - Verify the combined scenario
+```
+
+`--cdp` and `userDataDir` intentionally retain a shared persistent context and require one worker. Persistent browser profiles cannot safely be opened by parallel workers.
 
 Use `input` when a step has known test data and you do not want a text-model call:
 
@@ -123,6 +153,8 @@ For secrets, use `inputEnv` and optionally `sensitive: true`; the value is read 
   inputEnv: TEST_PASSWORD
   sensitive: true
 ```
+
+For local use, put these variables in the ignored `.env` file. In CI, inject them from the CI provider's secret store. Saved browser state contains live session credentials and is therefore kept in memory only. Failure screenshots can still contain sensitive page content, so use a dedicated low-privilege test account and choose the artifact policy accordingly.
 
 Uploads require an explicit `files` list in the step. Paths resolve relative to the spec file, and Jev receives only the fact that authorized files are available—not their paths.
 

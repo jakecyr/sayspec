@@ -28,6 +28,8 @@ export interface TestSpec {
   goal?: string;
   url?: string;
   dependsOn: string[];
+  /** Direct dependency whose browser storage state seeds this test. */
+  stateFrom?: string;
   steps: StepSpec[];
   cleanup: StepSpec[];
   assertions: AssertionSpec[];
@@ -47,6 +49,7 @@ export interface SuiteSpec {
   maxActionsPerStep: number;
   artifacts: ArtifactMode;
   gif: boolean;
+  workers: number;
   tests: TestSpec[];
 }
 

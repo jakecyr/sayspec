@@ -1,4 +1,4 @@
-export { BrowserSession } from "./browser.js";
+export { BrowserSession, type BrowserSessionOptions, type BrowserStorageState } from "./browser.js";
 export { JevClient } from "./jev.js";
 export { LlmClient } from "./llm.js";
 export { Runner } from "./runner.js";

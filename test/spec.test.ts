@@ -15,6 +15,7 @@ describe("spec parsing", () => {
     });
     expect(spec.tests[0]?.steps[0]).toEqual({ do: "Buy the item" });
     expect(spec.tests[1]?.assertions[0]).toEqual({ expect: "The account is signed in", timing: "end" });
+    expect(spec.workers).toBe(1);
     expect(orderedTests(spec).map((test) => test.id)).toEqual(["login", "checkout"]);
   });
 
@@ -37,5 +38,26 @@ describe("spec parsing", () => {
 
   it("rejects conflicting literal and environment inputs", () => {
     expect(() => parseSpec({ name: "suite", tests: [{ id: "a", steps: [{ do: "Type", input: "x", inputEnv: "X" }] }] })).toThrow(/both input and inputEnv/);
+  });
+
+  it("accepts workers and validates an explicit browser-state dependency", () => {
+    const spec = parseSpec({
+      name: "suite",
+      workers: 4,
+      tests: [
+        { id: "login", steps: ["Sign in"] },
+        { id: "seed", steps: ["Seed data"] },
+        { id: "test", dependsOn: ["login", "seed"], stateFrom: "login", steps: ["Test"] },
+      ],
+    });
+    expect(spec.workers).toBe(4);
+    expect(spec.tests[2]?.stateFrom).toBe("login");
+    expect(() => parseSpec({
+      name: "suite",
+      tests: [
+        { id: "login", steps: ["Sign in"] },
+        { id: "test", dependsOn: ["login"], stateFrom: "missing", steps: ["Test"] },
+      ],
+    })).toThrow(/stateFrom.*direct dependencies/);
   });
 });
