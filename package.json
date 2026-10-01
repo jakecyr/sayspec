@@ -17,9 +17,10 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "check": "npm run typecheck && npm test",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build",
     "dev": "tsx src/cli.ts",
     "fixture": "node --import tsx scripts/fixture-server.ts",
+    "lint": "eslint .",
     "test": "vitest run",
     "test:live-jev": "node --import tsx scripts/live-jev-conformance.ts",
     "test:live-llm": "CLASSIFIER=llm node --import tsx scripts/live-jev-conformance.ts",
@@ -36,9 +37,12 @@
     "zod": "^4.1.11"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^24.5.2",
+    "eslint": "^10.11.0",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
+    "typescript-eslint": "^8.71.0",
     "vitest": "^3.2.4"
   }
 }
