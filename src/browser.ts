@@ -199,7 +199,9 @@ export class BrowserSession {
       }
     }
 
-    const tabs = await Promise.all((this.context?.pages() ?? [page]).filter((candidate) => !candidate.isClosed()).map(async (candidate, index) => ({
+    const livePages = (this.context?.pages() ?? [page]).filter((candidate) => !candidate.isClosed());
+    const tabPages = new Map(livePages.map((candidate, index) => [index, candidate]));
+    const tabs = await Promise.all(livePages.map(async (candidate, index) => ({
       index,
       title: await candidate.title().catch(() => ""),
       url: candidate.url(),
@@ -217,6 +219,7 @@ export class BrowserSession {
       text: textParts.join("\n").slice(0, 12_000),
       elements,
       frames,
+      tabPages,
       tabs,
       observedAt: new Date().toISOString(),
       fingerprint,
@@ -248,9 +251,8 @@ export class BrowserSession {
       return;
     }
     if (operation === "SWITCH_TAB") {
-      const pages = this.context?.pages().filter((candidate) => !candidate.isClosed()) ?? [];
-      const selected = tabIndex === undefined ? undefined : pages[tabIndex];
-      if (!selected) throw new Error("Jev selected an unknown browser tab");
+      const selected = tabIndex === undefined ? undefined : observation.tabPages.get(tabIndex);
+      if (!selected || selected.isClosed()) throw new StaleObservationError("Jev selected a stale browser tab");
       this.page = selected;
       await selected.bringToFront();
       return;
@@ -324,6 +326,7 @@ export class BrowserSession {
       const dropFrame = observation.frames.get(drop.frameId);
       if (!dropFrame || dropFrame !== frame) throw new Error("Cross-frame drag and drop is not supported");
       const dropLocator = dropFrame.locator(`[data-sayspec-id="${drop.nodeId}"]`);
+      if (await dropLocator.count() !== 1 || !(await dropLocator.isVisible()) || !(await dropLocator.isEnabled())) throw new StaleObservationError("Drop target is stale, hidden, or disabled");
       await locator.dragTo(dropLocator);
     }
     await this.currentPage().waitForTimeout(operation === "TYPE_TEXT" ? 150 : 50);

@@ -9,6 +9,7 @@ const observation: Observation = {
   observedAt: new Date(0).toISOString(),
   fingerprint: "fixture",
   frames: new Map(),
+  tabPages: new Map(),
   tabs: [{ index: 0, title: "Example", url: "https://example.test", active: true }],
   elements: [{
     id: "f0:n1",

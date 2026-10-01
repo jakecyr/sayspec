@@ -1,4 +1,4 @@
-import type { Frame } from "playwright";
+import type { Frame, Page } from "playwright";
 
 export type BrowserName = "chromium" | "firefox" | "webkit" | "brave";
 export type ArtifactMode = "always" | "failure" | "off";
@@ -92,6 +92,7 @@ export interface Observation {
   text: string;
   elements: ObservedElement[];
   frames: Map<string, Frame>;
+  tabPages: Map<number, Page>;
   tabs: Array<{ index: number; title: string; url: string; active: boolean }>;
   observedAt: string;
   fingerprint: string;

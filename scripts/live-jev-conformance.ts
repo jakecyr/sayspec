@@ -22,6 +22,7 @@ const observation = (text: string, elements: ObservedElement[], tabs: Observatio
   text,
   elements,
   frames: new Map(),
+  tabPages: new Map(),
   tabs,
   observedAt: new Date().toISOString(),
   fingerprint: "synthetic",
