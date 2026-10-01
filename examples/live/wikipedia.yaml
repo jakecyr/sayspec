@@ -1,0 +1,15 @@
+name: Wikipedia navigation
+baseUrl: https://en.wikipedia.org/wiki/Main_Page
+artifacts: failure
+gif: true
+
+tests:
+  - id: search-and-navigate
+    steps:
+      - do: Search Wikipedia for Playwright software
+        input: Playwright software
+      - do: Open the article about Playwright software
+        expect: The Playwright software article is open
+      - Scroll down within the article until the References section or later article content is visible
+      - do: Go back to the prior Wikipedia page
+        expect: The prior Wikipedia page is visible

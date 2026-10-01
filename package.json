@@ -1,0 +1,43 @@
+{
+  "name": "sayspec",
+  "version": "0.1.0",
+  "description": "Fast natural-language browser tests powered by Jev decisions and Playwright.",
+  "type": "module",
+  "bin": {
+    "sayspec": "dist/cli.js",
+    "ss": "dist/cli.js"
+  },
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "examples",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "npm run typecheck && npm test",
+    "dev": "tsx src/cli.ts",
+    "fixture": "node --import tsx scripts/fixture-server.ts",
+    "test": "vitest run",
+    "test:live-jev": "node --import tsx scripts/live-jev-conformance.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "commander": "^14.0.1",
+    "dotenv": "^17.2.2",
+    "playwright": "^1.55.1",
+    "yaml": "^2.8.1",
+    "zod": "^4.1.11"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

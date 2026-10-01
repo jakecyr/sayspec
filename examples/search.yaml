@@ -1,0 +1,23 @@
+name: Example search journey
+baseUrl: https://www.google.com
+browser: chromium
+headless: true
+artifacts: failure
+gif: true
+
+tests:
+  - id: search
+    goal: Find the official Playwright website
+    steps:
+      - do: Search for Playwright browser automation
+        expect: Search results for Playwright are visible
+      - do: Open the official Playwright result
+        expect: The Playwright website is open
+    assertions:
+      - expect: The current page has not displayed a server error
+        timing: throughout
+      - expect: The current page is the official Playwright documentation site
+        timing: end
+    cleanup:
+      - do: Return to the search results if the browser is on the Playwright website
+        when: The current page is the Playwright website

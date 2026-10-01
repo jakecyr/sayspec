@@ -1,0 +1,34 @@
+name: Amazon cart journey
+baseUrl: https://www.amazon.com
+artifacts: failure
+gif: true
+maxActionsPerStep: 20
+
+tests:
+  - id: add-product-to-cart
+    goal: Find a USB-C cable, inspect it, select quantity two, and verify it in the cart without purchasing
+    steps:
+      - do: Dismiss any location, cookie, or sign-in interruption if one is visible
+        when: An interruption blocks product search
+      - do: Search Amazon for a USB-C cable
+        input: usb c cable
+        expect: Product results for USB-C cables are visible
+      - Scroll the product results down to reveal several organic product results
+      - do: Open a relevant USB-C cable product result that is available to add to cart
+        expect: A USB-C cable product detail page is visible
+      - Scroll down within the product page or purchasing panel until the quantity and Add to Cart controls are available
+      - do: Select quantity 2
+        when: A quantity dropdown is available
+        expect: Quantity 2 is selected
+      - do: Add the product to the cart
+        expect: Amazon confirms the product was added to the cart
+      - do: Open the shopping cart
+        expect: The cart contains the selected USB-C cable
+    assertions:
+      - expect: No checkout order has been placed
+        timing: throughout
+      - expect: The shopping cart contains a USB-C cable with quantity 2, or quantity controls visibly show 2
+        timing: end
+    cleanup:
+      - do: Remove the USB-C cable added by this test from the cart
+        when: The cart contains the USB-C cable added by this test

@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Jev Actions Playground</title>
+  <style>
+    body { font: 16px system-ui; max-width: 900px; margin: 30px auto; }
+    section { border: 1px solid #bbb; border-radius: 8px; margin: 18px 0; padding: 16px; }
+    #results { height: 140px; overflow-y: auto; border: 1px solid #777; padding: 8px; }
+    #results div { height: 75px; }
+    output { display: block; color: #075; font-weight: 600; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Jev Actions Playground</h1>
+  <section aria-label="Search demo">
+    <label>Search products <input id="search" placeholder="Search products"></label>
+    <button id="search-button">Search</button>
+    <output id="search-output"></output>
+  </section>
+  <section aria-label="Dropdown demo">
+    <label>Shipping country
+      <select id="country"><option>United States</option><option>Canada</option><option>Japan</option></select>
+    </label>
+    <output id="country-output">United States selected</output>
+  </section>
+  <section aria-label="Keyboard demo">
+    <label>Keyboard command <input id="keyboard" placeholder="Focus me, then press Enter"></label>
+    <output id="keyboard-output"></output>
+  </section>
+  <section aria-label="Pointer and checkbox demo">
+    <label><input id="newsletter" type="checkbox"> Receive updates</label>
+    <button id="hover-button">Hover for details</button>
+    <button id="double-button">Double-click me</button>
+    <button id="context-button">Right-click me</button>
+    <output id="pointer-output"></output>
+  </section>
+  <section aria-label="Upload demo">
+    <label>Attach fixture <input id="upload" type="file"></label>
+    <output id="upload-output"></output>
+  </section>
+  <section aria-label="Drag and drop demo">
+    <button id="drag-source" draggable="true">Draggable card</button>
+    <div id="drop-target" role="region" data-dropzone style="border: 2px dashed #777; padding: 25px">Drop card here</div>
+    <output id="drag-output"></output>
+  </section>
+  <section aria-label="Nested scrolling demo">
+    <div id="results" role="region" aria-label="Scrollable results panel">
+      <div>Result 1</div><div>Result 2</div><div>Result 3</div><div>Result 4</div>
+      <button id="later-result">Later result</button>
+    </div>
+    <output id="scroll-output"></output>
+  </section>
+  <section aria-label="Navigation demo">
+    <a href="detail.html">Open detail page</a>
+    <button id="popup">Open receipt in a new tab</button>
+  </section>
+  <script>
+    searchButton.onclick = () => searchOutput.value = `Results for ${search.value}`;
+    country.onchange = () => countryOutput.value = `${country.value} selected`;
+    keyboard.onkeydown = event => { if (event.key === 'Enter') keyboardOutput.value = 'Enter received'; };
+    newsletter.onchange = () => pointerOutput.value = newsletter.checked ? 'Updates enabled' : 'Updates disabled';
+    hoverButton.onmouseenter = () => pointerOutput.value = 'Hover details visible';
+    doubleButton.ondblclick = () => pointerOutput.value = 'Double-click received';
+    contextButton.oncontextmenu = event => { event.preventDefault(); pointerOutput.value = 'Right-click received'; };
+    upload.onchange = () => uploadOutput.value = upload.files.length ? `Attached ${upload.files[0].name}` : 'No file attached';
+    dragSource.ondragstart = event => event.dataTransfer.setData('text/plain', 'card');
+    dropTarget.ondragover = event => event.preventDefault();
+    dropTarget.ondrop = event => { event.preventDefault(); dragOutput.value = 'Card dropped'; };
+    laterResult.onclick = () => scrollOutput.value = 'Later result opened';
+    popup.onclick = () => window.open('receipt.html', '_blank');
+  </script>
+</body>
+</html>

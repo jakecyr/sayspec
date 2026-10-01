@@ -1,0 +1,74 @@
+name: Local action conformance
+baseUrl: http://127.0.0.1:4173/actions.html
+artifacts: always
+gif: true
+maxActionsPerStep: 8
+
+tests:
+  - id: type-and-click
+    steps:
+      - do: Enter mechanical keyboard in the Search products field
+        input: mechanical keyboard
+      - do: Click Search
+        expect: Results for mechanical keyboard is visible
+
+  - id: native-select
+    steps:
+      - do: Select Canada as the shipping country
+        expect: Canada selected is visible
+
+  - id: nested-scroll
+    steps:
+      - Scroll the Scrollable results panel down until Later result is visible
+      - do: Click Later result
+        expect: Later result opened is visible
+
+  - id: keyboard
+    steps:
+      - Click the Keyboard command input so it has focus
+      - do: Press Enter in the focused Keyboard command input
+        expect: Enter received is visible
+
+  - id: navigation
+    steps:
+      - do: Open the detail page
+        expect: Detail page is visible
+      - do: Go back to the actions playground
+        expect: Jev Actions Playground is visible
+      - do: Navigate forward to the detail page
+        expect: Detail page is visible
+
+  - id: pointer-actions
+    steps:
+      - do: Check Receive updates
+        expect: Updates enabled is visible
+      - do: Uncheck Receive updates
+        expect: Updates disabled is visible
+      - do: Hover over Hover for details
+        expect: Hover details visible is visible
+      - do: Double-click Double-click me
+        expect: Double-click received is visible
+      - do: Right-click Right-click me
+        expect: Right-click received is visible
+
+  - id: upload
+    steps:
+      - do: Attach the authorized upload fixture
+        files: [fixtures/upload.txt]
+        expect: Attached upload.txt is visible
+
+  - id: drag-and-drop
+    steps:
+      - do: Drag Draggable card to Drop card here
+        expect: Card dropped is visible
+
+  - id: tabs
+    steps:
+      - do: Open the receipt in a new browser tab
+        expect: The Receipt tab is open
+      - do: Switch to the Jev Actions Playground browser tab
+        expect: Jev Actions Playground is visible
+      - do: Switch to the Receipt browser tab
+        expect: Receipt tab is visible
+      - do: Close the Receipt browser tab
+        expect: Jev Actions Playground is visible

@@ -1,0 +1,15 @@
+name: GitHub documentation navigation
+baseUrl: https://docs.github.com
+artifacts: failure
+gif: true
+
+tests:
+  - id: keyboard-search
+    steps:
+      - do: Open the documentation search interface using its visible control
+      - do: Enter GitHub Actions workflow syntax in the search field
+        input: GitHub Actions workflow syntax
+      - do: Press Enter to submit the focused documentation search
+      - do: Open a result about workflow syntax
+        expect: Documentation about workflow syntax is open
+      - Scroll down to reveal later sections of the workflow syntax documentation
